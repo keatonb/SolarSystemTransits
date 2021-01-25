@@ -6,14 +6,19 @@ Created on Sun Jan 24 15:39:33 2021
 Calculate and plot details of inner Solar System transits as seen from outer
 Solar System objects.
 
+Requires package solarsystem (https://pypi.org/project/solarsystem/)
+Animation requires imagemagick (imagemagick.org)
+
 @author: keatonb
 """
 import solarsystem
 import numpy as np
 import matplotlib.pyplot as plt
+import warnings
 from astropy import units as u
 from astropy import constants as const
-from datetime import datetime,timedelta
+from astropy.time import Time
+from datetime import timedelta
 from matplotlib import animation
 
 #from NASA Planetary Fact Sheet #km
@@ -151,6 +156,8 @@ class Geometry:
         sun = plt.Circle((0, 0), sunangrad, color='y', zorder = 1)
         #Is planet in front of Sun?
         infront = self.rI[0] < self.rSun[0]
+        #The line on this circle makes it look larger than reality,
+        #but it's almost too small to see without
         planet = plt.Circle((scale*self.rI[2], scale*self.rI[1]), 
                             scale*self.angdiam_I/2., color='blue',
                             zorder=2*infront)
@@ -175,3 +182,89 @@ class Geometry:
             plt.savefig(filename)
         if show:
             plt.show()
+
+class Transit:
+    """
+    Properties and plots of transits in time window.
+    
+    Calculates:
+     - Impact parameter (b)
+     TODO: Time of ingress egress
+     
+    Plots:
+     - animate (gif)
+     TODO: traceplot (path)
+     TODO: lightcurve (simulated)
+    
+    """
+    def __init__(self, innerplanet, outerplanet, starttime, endtime, timestep):
+        """
+        Parameters:
+            innerplanet (str): name of inner planet
+            outerplanet (str): name of outer planet
+            starttime (datetime): timestamp (UTC) before transit
+            endtime (datetime): timestamp (UTC) before transit
+            timestep (float): sampling interval (minutes; > 0)
+            
+        Notes:
+            Impact parameter, b, is minimum within timestamp
+        """
+        #Check that timestep is positive
+        if timestep <= 0:
+            raise Exception("Timestep must be positive.")
+        if timestep > 10:
+            warnings.warn("Timesteps longer than 10 minutes may produce poor results")
+        deltatime = timedelta(minutes=timestep)
+        self.innerplanet = innerplanet
+        self.outerplanet = outerplanet
+        
+        #Compute timestamps
+        self.times = [starttime]
+        while self.times[-1] < endtime:
+            self.times.append(self.times[-1] + deltatime)
+        self.mjdtimes = [Time(time).mjd for time in self.times]
+        
+        #Calculate geometry at each timestamp
+        self.geometry = [Geometry(self.innerplanet, self.outerplanet, time)
+                         for time in self.times]
+        
+        #Compute impact parameter (good to timestep precision)
+        self.b = np.min([g.theta / ((g.angdiam_Sun)/2.) for g in self.geometry])
+        
+    def animate(self, filename="Transit.gif", duration=3, figsize=(4,4), dpi=150, **kwargs):
+        """Animate the transit
+        
+        Parameters:
+            filename (str): file to save animation to
+            duration (float): loop duration (seconds)
+            figsize (float,float): width, height in inches
+            dpi (float): dots per inch
+            **kwargs: for Geometry plot function
+        """
+        fig,ax = plt.subplots(figsize=figsize)
+        
+        #No initialization needed
+        def init():
+            return 
+
+        #Animation function to call
+        def animateframe(i):
+            ax.clear() #Clear previous data
+            self.geometry[i].plot(ax=ax, show=False, **kwargs)
+            return
+        
+        #Time between frames
+        interval = duration/len(self.times)
+
+        #Animate it and save!
+        anim = animation.FuncAnimation(fig, animateframe, init_func=init, 
+                                       frames=len(self.times), interval=interval, 
+                                       blit=False)
+        anim.save(filename, dpi=dpi, fps = 1/interval, writer='imagemagick')
+        
+    def traceplot(self):
+        """Plot path of transit across Sun
+        
+        COMING SOON
+        """
+        pass
