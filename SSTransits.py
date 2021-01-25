@@ -164,8 +164,8 @@ class Geometry:
         ax.text(0.03,0.02,(f"{self.innerplanet} from {self.outerplanet} \n" +
                            time.strftime('%Y-%m-%d %H:%M:%S')),
                 transform=ax.transAxes, ha='left', va='bottom', fontsize=fontsize)
-        ax.set_xlabel(f"l\' ({unit.short_names[0]})", fontsize=fontsize)
-        ax.set_ylabel(f"b\' ({unit.short_names[0]})", fontsize=fontsize)
+        ax.set_xlabel(fr"$l'$ ({unit.short_names[0]})", fontsize=fontsize)
+        ax.set_ylabel(fr"$b'$ ({unit.short_names[0]})", fontsize=fontsize)
         #Scale axes
         ax.set_xlim(-fov[0]*sunangrad/2, fov[0]*sunangrad/2)
         ax.set_ylim(-fov[1]*sunangrad/2, fov[1]*sunangrad/2)
