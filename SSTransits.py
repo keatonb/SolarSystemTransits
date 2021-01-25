@@ -116,8 +116,8 @@ class Geometry:
         self.angdiam_I = planetdiameter[innerplanet]*u.km.to(u.AU)/rO_I_prime[0]
 
         #Are we in transit?
-        self.transit = ((self.theta < (self.angdiam_Sun + self.angdiam_I)/2.) & 
-                        (rO_I_prime[0] < rO_Sun_prime[0]))
+        self.intransit = ((self.theta < (self.angdiam_Sun + self.angdiam_I)/2.) & 
+                          (rO_I_prime[0] < rO_Sun_prime[0]))
 
         #Light travel time delay to Earth (seconds)
         self.timedelay = ((rO_I_prime[0] + rO_E_prime[0])*u.AU/const.c).to(u.s).value
