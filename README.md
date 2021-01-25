@@ -1,4 +1,4 @@
-# SolarSystemTransits
+# Solar System Transits
 
 Code to calculate and plot details of inner Solar System transits as seen from outer Solar System objects.
 
