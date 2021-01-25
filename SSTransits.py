@@ -245,6 +245,8 @@ class Transit:
         
         #No initialization needed
         def init():
+            self.geometry[0].plot(ax=ax, show=False, **kwargs)
+            plt.tight_layout()
             return 
 
         #Animation function to call
@@ -261,7 +263,6 @@ class Transit:
                                        frames=len(self.times), interval=interval, 
                                        blit=False)
         anim.save(filename, dpi=dpi, fps = 1/interval, writer='imagemagick')
-        
     def traceplot(self):
         """Plot path of transit across Sun
         
