@@ -18,6 +18,7 @@ import warnings
 from astropy import units as u
 from astropy import constants as const
 from astropy.time import Time
+from scipy.interpolate import interp1d
 from datetime import timedelta
 from matplotlib import animation
 
@@ -123,7 +124,11 @@ class Geometry:
         #Are we in transit?
         self.intransit = ((self.theta < (self.angdiam_Sun + self.angdiam_I)/2.) & 
                           (rO_I_prime[0] < rO_Sun_prime[0]))
-
+        
+        #Fraction of distance toward Solar limb (0 at center)
+        r = self.theta / (self.angdiam_Sun/2.0)
+        self.mu = np.sqrt(1-r**2.)
+        
         #Light travel time delay to Earth (seconds)
         self.timedelay = ((rO_I_prime[0] + rO_E_prime[0])*u.AU/const.c).to(u.s).value
 
@@ -146,7 +151,7 @@ class Geometry:
         if ax is None:
             fig,ax = plt.subplots(**kwargs)
         #Circles must be round
-        ax.set_aspect(fov[1]/fov[0])
+        ax.set_aspect(1)
         
         #Angular unit conversion (from radians)
         scale = u.radian.to(unit)
@@ -222,11 +227,27 @@ class Transit:
         self.times = [starttime]
         while self.times[-1] < endtime:
             self.times.append(self.times[-1] + deltatime)
-        self.mjdtimes = [Time(time).mjd for time in self.times]
+        self.mjdtimes = np.array([Time(time).mjd for time in self.times])
         
         #Calculate geometry at each timestamp
         self.geometry = [Geometry(self.innerplanet, self.outerplanet, time)
                          for time in self.times]
+        
+        #Get observed times (corrected for light travel time)
+        self.mjdobs = self.mjdtimes + np.array([g.timedelay for g in self.geometry])/(24*3600.)
+        
+        #compute transit start, end, and mid-eclipse times
+        #in transit when transitsep <= 1
+        transitsep = [g.theta / ((g.angdiam_Sun+g.angdiam_I)/2.0) for g in self.geometry]
+        #separate below and after transit
+        deepest = np.argmin([g.theta / ((g.angdiam_Sun+g.angdiam_I)/2.) for g in self.geometry])
+        #we'll interpolate precise start and end times
+        self.startingress_mjdobs = interp1d(transitsep[:deepest],self.mjdobs[:deepest],
+                                           bounds_error=False)(1)
+        self.endegress_mjdobs = interp1d(transitsep[deepest:],self.mjdobs[deepest:],
+                                           bounds_error=False)(1)
+        self.midtransit_mjdobs = (self.startingress_mjdobs + self.endegress_mjdobs)/2.
+        self.transitduration =  (self.endegress_mjdobs - self.startingress_mjdobs)*24.*u.h
         
         #Compute impact parameter (good to timestep precision)
         self.b = np.min([g.theta / ((g.angdiam_Sun)/2.) for g in self.geometry])
@@ -240,6 +261,9 @@ class Transit:
             figsize (float,float): width, height in inches
             dpi (float): dots per inch
             **kwargs: for Geometry plot function
+            
+        Notes:
+            Might spit out a garbage plot after saving the animation.
         """
         fig,ax = plt.subplots(figsize=figsize)
         
@@ -263,9 +287,79 @@ class Transit:
                                        frames=len(self.times), interval=interval, 
                                        blit=False)
         anim.save(filename, dpi=dpi, fps = 1/interval, writer='imagemagick')
-    def traceplot(self):
+    def traceplot(self, ax=None, fov=(4,4), unit=u.arcsec, show=True, 
+                  filename=None, plotsun=True, fontsize=13, **kwargs):
         """Plot path of transit across Sun
         
-        COMING SOON
+        Parameters:
+            ax (mpl axis): axis to plot to (default: create new fig,ax)
+            fov (tuple): (width,height) in solar radii
+            unit (astropy angle unit or "solarradii"): unit for axes
+            show (bool): whether to show plot (default: True)
+            filename (str): filename to save to (default: None)
+            sun (bool): plot Sun circle? (default: True)
+            fontsize (float): fontsize
+            **kwargs: args for figure if no axis provided
         """
-        pass
+        #collect relevant details
+        angdiam_I = np.array([g.angdiam_I for g in self.geometry])
+        angdiam_Sun = np.array([g.angdiam_Sun for g in self.geometry])
+        b = np.array([g.rI[1] for g in self.geometry])
+        l = np.array([g.rI[2] for g in self.geometry])
+        rI = np.array([g.rI[0] for g in self.geometry])
+        rSun = np.array([g.rSun[0] for g in self.geometry])
+        
+        #Are we plotting in solar radii? (useful for overlaying traces)
+        solarradii = unit == "solarradii"
+        if solarradii:
+            unit = u.radian
+        
+        #Angular unit conversion (from radians)
+        scale = u.radian.to(unit)
+        
+        #Get trajectory angle, phi, to plot shadow wide enough
+        phi = np.arctan(np.diff(b)/np.diff(l))
+        phi = np.concatenate((phi,[phi[-1]])) # match length
+        
+        #Create fig and ax if no ax provided
+        if ax is None:
+            fig,ax = plt.subplots(**kwargs)
+        #Circles must be round
+        ax.set_aspect(1)
+        
+        #Display sun, using angular size at mid-transit (unless solarradii display units)
+        midtransit = np.argmin([g.theta / ((g.angdiam_Sun)/2.) for g in self.geometry])
+        angdiam_Sun = angdiam_Sun[midtransit]
+        sunangrad = scale*angdiam_Sun/2.
+        
+        if solarradii: #Handle case for solar radii units
+            sunangrad = 1
+            scale = 2./angdiam_Sun
+        if plotsun: #Only plot sun if requested
+            sun = plt.Circle((0, 0), sunangrad, color='y', zorder = 1)
+            ax.add_patch(sun)
+        
+        #Is planet in front of Sun?
+        infront = rI[midtransit] < rSun[midtransit]
+        
+        #Display transit path
+        linewidth = scale*angdiam_I / np.cos(phi) #Width of shadow path
+        ax.fill_between(scale*l,scale*b+linewidth/2.,scale*b-linewidth/2,lw=0, fc='0.2',zorder=2*infront)
+        
+        ax.set_xlabel(fr"$l'$ ({unit.short_names[0]})", fontsize=fontsize)
+        ax.set_ylabel(fr"$b'$ ({unit.short_names[0]})", fontsize=fontsize)
+        if solarradii:
+            ax.set_xlabel("Solar radii", fontsize=fontsize)
+            ax.set_ylabel("Solar radii", fontsize=fontsize)
+        
+        #Scale axes
+        ax.set_xlim(-fov[0]*sunangrad/2, fov[0]*sunangrad/2)
+        ax.set_ylim(-fov[1]*sunangrad/2, fov[1]*sunangrad/2)
+        
+        #Save plot or show
+        if filename is not None:
+            plt.tight_layout()
+            plt.savefig(filename)
+        if show:
+            plt.tight_layout()
+            plt.show()
