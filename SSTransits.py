@@ -193,12 +193,12 @@ class Transit:
     Properties and plots of transits in time window.
     
     Calculates:
+     - MJD (instantaneous and observed) of ingress,egress,midtranist
      - Impact parameter (b)
-     TODO: Time of ingress egress
      
     Plots:
      - animate (gif)
-     TODO: traceplot (path)
+     - traceplot (path)
      TODO: lightcurve (simulated)
     
     """
@@ -227,14 +227,14 @@ class Transit:
         self.times = [starttime]
         while self.times[-1] < endtime:
             self.times.append(self.times[-1] + deltatime)
-        self.mjdtimes = np.array([Time(time).mjd for time in self.times])
+        self.mjd = np.array([Time(time).mjd for time in self.times])
         
         #Calculate geometry at each timestamp
         self.geometry = [Geometry(self.innerplanet, self.outerplanet, time)
                          for time in self.times]
         
         #Get observed times (corrected for light travel time)
-        self.mjdobs = self.mjdtimes + np.array([g.timedelay for g in self.geometry])/(24*3600.)
+        self.mjdobs = self.mjd + np.array([g.timedelay for g in self.geometry])/(24*3600.)
         
         #compute transit start, end, and mid-eclipse times
         #in transit when transitsep <= 1
@@ -242,15 +242,32 @@ class Transit:
         #separate below and after transit
         deepest = np.argmin([g.theta / ((g.angdiam_Sun+g.angdiam_I)/2.) for g in self.geometry])
         #we'll interpolate precise start and end times
-        self.startingress_mjdobs = interp1d(transitsep[:deepest],self.mjdobs[:deepest],
-                                           bounds_error=False)(1)
-        self.endegress_mjdobs = interp1d(transitsep[deepest:],self.mjdobs[deepest:],
-                                           bounds_error=False)(1)
+        if deepest != 0:
+            self.startingress_mjd = float(interp1d(transitsep[:deepest],self.mjd[:deepest],
+                                             bounds_error=False)(1))
+            self.startingress_mjdobs = float(interp1d(transitsep[:deepest],self.mjdobs[:deepest],
+                                             bounds_error=False)(1))
+        else:
+            self.startingress_mjd = np.nan
+            self.startingress_mjdobs = np.nan
+        if deepest != len(self.geometry)-1:
+            self.endegress_mjd = float(interp1d(transitsep[deepest:],self.mjd[deepest:],
+                                          bounds_error=False)(1))
+            self.endegress_mjdobs = float(interp1d(transitsep[deepest:],self.mjdobs[deepest:],
+                                          bounds_error=False)(1))
+        else:
+            self.endegress_mjd = np.nan
+            self.endegress_mjdobs = np.nan
+        self.midtransit_mjd = (self.startingress_mjd + self.endegress_mjd)/2.
         self.midtransit_mjdobs = (self.startingress_mjdobs + self.endegress_mjdobs)/2.
-        self.transitduration =  (self.endegress_mjdobs - self.startingress_mjdobs)*24.*u.h
+        self.transitdurationobs = (self.endegress_mjdobs - self.startingress_mjdobs)*24*u.h
+        
+        #Compute geometry at mid-transit
+        self.midtransit_geometry = Geometry(self.innerplanet, self.outerplanet, 
+                               Time(self.midtransit_mjd,format='mjd').to_datetime())
         
         #Compute impact parameter (good to timestep precision)
-        self.b = np.min([g.theta / ((g.angdiam_Sun)/2.) for g in self.geometry])
+        self.b = self.midtransit_geometry.theta / ((self.midtransit_geometry.angdiam_Sun)/2.)
         
     def animate(self, filename="Transit.gif", duration=3, figsize=(4,4), dpi=150, **kwargs):
         """Animate the transit
@@ -261,9 +278,6 @@ class Transit:
             figsize (float,float): width, height in inches
             dpi (float): dots per inch
             **kwargs: for Geometry plot function
-            
-        Notes:
-            Might spit out a garbage plot after saving the animation.
         """
         fig,ax = plt.subplots(figsize=figsize)
         
@@ -287,6 +301,7 @@ class Transit:
                                        frames=len(self.times), interval=interval, 
                                        blit=False)
         anim.save(filename, dpi=dpi, fps = 1/interval, writer='imagemagick')
+        
     def traceplot(self, ax=None, fov=(4,4), unit=u.arcsec, show=True, 
                   filename=None, plotsun=True, fontsize=13, **kwargs):
         """Plot path of transit across Sun
@@ -363,3 +378,17 @@ class Transit:
         if show:
             plt.tight_layout()
             plt.show()
+            
+    def lightcurveplot(self):
+        """
+        Simulate transit light curve with limb darkening
+        
+        (Coming soon)
+        """
+        pass
+
+        Returns
+        -------
+        None.
+
+        """
