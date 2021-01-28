@@ -386,9 +386,4 @@ class Transit:
         (Coming soon)
         """
         pass
-
-        Returns
-        -------
-        None.
-
-        """
+    
