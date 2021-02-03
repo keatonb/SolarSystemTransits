@@ -187,6 +187,18 @@ class Geometry:
             plt.savefig(filename)
         if show:
             plt.show()
+            
+def _limbdarkening(phi, u2=0.88, v2=-0.23):
+    """limb darkening law
+
+    parameterization from Section 14.7 of Allen's Astrophysical Quantities 
+    (4th ed, Cox, 2000, AIP Press)
+    default u2,v2 values are for ~V filter @ 600 nm
+    phi is angle between solar radius vector and line of sight (radians)
+    normalized so disk integrates to 1
+    """
+    mu = np.cos(phi)
+    return (1 - u2 - v2 + u2*mu + v2*(mu**2))/(1-u2/3 - v2/2)
 
 class Transit:
     """
@@ -265,6 +277,11 @@ class Transit:
         #Compute geometry at mid-transit
         self.midtransit_geometry = Geometry(self.innerplanet, self.outerplanet, 
                                Time(self.midtransit_mjd,format='mjd').to_datetime())
+        #Simulate mid-transit (default limb darkening)
+        phi = np.arcsin(2*self.midtransit_geometry.theta/self.midtransit_geometry.angdiam_Sun)
+        self.midtransit_depth = ((self.midtransit_geometry.angdiam_I**2/
+                                  self.midtransit_geometry.angdiam_Sun**2)*
+                                  _limbdarkening(phi))*1e6 # ppm
         
         #Compute impact parameter (good to timestep precision)
         self.b = self.midtransit_geometry.theta / ((self.midtransit_geometry.angdiam_Sun)/2.)
@@ -379,11 +396,22 @@ class Transit:
             plt.tight_layout()
             plt.show()
             
-    def lightcurveplot(self):
+    def simlightcurve(self,limbdarkeningfunc = _limbdarkening, 
+                       limbdarkening_args = {"u2":0.88, "v2":-0.23}):
         """
         Simulate transit light curve with limb darkening
         
-        (Coming soon)
+        Assumes negligible limb darkening gradient across transiting planet disk
+        Returns relative model flux at self.mjd_obs
         """
-        pass
-    
+        theta = np.array([g.theta for g in self.geometry])
+        angdiam_Sun = np.array([g.angdiam_Sun for g in self.geometry])
+        angdiam_I = np.array([g.angdiam_I for g in self.geometry])
+        
+        #Angle between radial vector and line of sight
+        phi = np.arcsin(2*theta/angdiam_Sun)
+        
+        #compute relative flux
+        lc = 1 - (angdiam_I**2/angdiam_Sun**2)*_limbdarkening(phi,**limbdarkening_args)
+        lc[np.isnan(lc)] = 1
+        return lc
